@@ -574,68 +574,205 @@ local function LocalScript_1_generatedScript()
     script.Parent = ToggleBT
     -- LocalScript para colocar dentro do ToggleBT
     local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    
     local player = Players.LocalPlayer
     local button = script.Parent -- O botão ToggleBT
+    
     -- Variáveis de controle
     local scriptAtivo = false
+    local brainrotConnections = {}
+    local brainrotThread = nil
+    
     -- URL do script
     local SCRIPT_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/Steal-a-Brainrot/refs/heads/main/god.lua"
-    -- Função para limpar o script
-    local function cleanup()
-    	-- Usar variável global para controlar o script
-    	if getgenv().BrainrotAutoCompra then
-    		getgenv().BrainrotAutoCompra.cleanup()
-    		getgenv().BrainrotAutoCompra = nil
-    	end
-    	print("Script Brainrot Auto Compra DESATIVADO")
+   -- Função para interceptar e armazenar conexões
+    local function setupConnectionInterceptor()
+        -- Backup das funções originais
+        local originalConnect = game:GetService("RunService").Heartbeat.Connect
+        local originalProximityConnect = game:GetService("ProximityPromptService").PromptShown.Connect
+        local originalPromptHiddenConnect = game:GetService("ProximityPromptService").PromptHidden.Connect
+        local originalCharacterConnect = Players.LocalPlayer.CharacterAdded.Connect
+        local originalChatConnect = Players.LocalPlayer.Chatted.Connect
+        local originalPlayerRemovingConnect = Players.PlayerRemoving.Connect
+        
+        -- Função para interceptar conexões
+        local function interceptConnection(originalFunc, service, event)
+            return function(self, callback)
+                local connection = originalFunc(self, callback)
+                table.insert(brainrotConnections, connection)
+                return connection
+            end
+        end
+        
+        -- Substituir temporariamente as funções Connect
+        game:GetService("RunService").Heartbeat.Connect = interceptConnection(originalConnect, "RunService", "Heartbeat")
+        game:GetService("ProximityPromptService").PromptShown.Connect = interceptConnection(originalProximityConnect, "ProximityPromptService", "PromptShown")
+        game:GetService("ProximityPromptService").PromptHidden.Connect = interceptConnection(originalPromptHiddenConnect, "ProximityPromptService", "PromptHidden")
+        Players.LocalPlayer.CharacterAdded.Connect = interceptConnection(originalCharacterConnect, "Players", "CharacterAdded")
+        Players.LocalPlayer.Chatted.Connect = interceptConnection(originalChatConnect, "Players", "Chatted")
+        Players.PlayerRemoving.Connect = interceptConnection(originalPlayerRemovingConnect, "Players", "PlayerRemoving")
+        
+        -- Retornar função para restaurar
+        return function()
+            game:GetService("RunService").Heartbeat.Connect = originalConnect
+            game:GetService("ProximityPromptService").PromptShown.Connect = originalProximityConnect
+            game:GetService("ProximityPromptService").PromptHidden.Connect = originalPromptHiddenConnect
+            Players.LocalPlayer.CharacterAdded.Connect = originalCharacterConnect
+            Players.LocalPlayer.Chatted.Connect = originalChatConnect
+            Players.PlayerRemoving.Connect = originalPlayerRemovingConnect
+        end
     end
+    
+    -- Função para desativar o script
+    local function desativarScript()
+        print("Desativando Brainrot Auto Compra...")
+        
+        -- Parar a thread principal se existir
+        if brainrotThread then
+            task.cancel(brainrotThread)
+            brainrotThread = nil
+        end
+        
+        -- Desconectar todas as conexões capturadas
+        for i, connection in pairs(brainrotConnections) do
+            if connection and typeof(connection) == "RBXScriptConnection" then
+                pcall(function()
+                    connection:Disconnect()
+                end)
+            end
+        end
+        brainrotConnections = {}
+        
+        -- Limpar variáveis globais
+        _G.AUTO_ACTIVATE = false
+        _G.brainrotAtivo = false
+        _G.brainrotStop = true
+        
+        -- Limpar outras possíveis variáveis
+        _G.trackedPrompts = nil
+        _G.lastActivation = nil
+        _G.targetNames = nil
+        _G.processedPrompts = nil
+        _G.scanQueue = nil
+        _G.targetNamesCache = nil
+        _G.positionCache = nil
+        
+        print("Script Brainrot Auto Compra DESATIVADO")
+    end
+    
     -- Função para ativar o script
     local function ativarScript()
-    	local success, result = pcall(function()
-    		loadstring(game:HttpGet(SCRIPT_URL))()
-    		return true
-    	end)
-    	if success then
-    		print("Script Brainrot Auto Compra ATIVADO")
-    		return true
-    	else
-    		warn("Erro ao carregar script:", result)
-    		return false
-    	end
+        local success, result = pcall(function()
+            -- Limpar estado anterior
+            brainrotConnections = {}
+            
+            -- Definir variáveis de controle
+            _G.brainrotAtivo = true
+            _G.AUTO_ACTIVATE = true
+            _G.brainrotStop = false
+            
+            -- Configurar interceptador de conexões
+            local restoreConnections = setupConnectionInterceptor()
+            
+            -- Executar o script em uma thread separada
+            brainrotThread = task.spawn(function()
+                local scriptCode = game:HttpGet(SCRIPT_URL)
+                
+                -- Modificar o script para adicionar verificações de parada
+                local modifiedScript = [[
+                    -- Verificação de parada no início
+                    if _G.brainrotStop then return end
+                    
+                    -- Função para verificar se deve parar
+                    local function shouldStop()
+                        return _G.brainrotStop == true or _G.brainrotAtivo == false
+                    end
+                    
+                    -- Interceptar loops principais
+                    local originalWait = wait
+                    local originalTask = task
+                    
+                    wait = function(time)
+                        if shouldStop() then return end
+                        return originalWait(time or 0)
+                    end
+                    
+                    task.wait = function(time)
+                        if shouldStop() then return end
+                        return originalTask.wait(time or 0)
+                    end
+                    
+                ]] .. scriptCode
+                
+                -- Executar o código modificado
+                loadstring(modifiedScript)()
+            end)
+            
+            -- Aguardar um pouco para o script inicializar
+            wait(0.5)
+            
+            return true
+        end)
+        
+        if success then
+            print("Script Brainrot Auto Compra ATIVADO")
+            return true
+        else
+            warn("Erro ao carregar script:", result)
+            desativarScript()
+            return false
+        end
     end
+    
     -- Função de toggle
     local function toggleScript()
-    	if scriptAtivo then
-    		-- Desativar script
-    		cleanup()
-    		scriptAtivo = false
-    		-- Mudar aparência do botão (opcional)
-    		button.Text = "Brainrot: OFF"
-    		button.BackgroundColor3 = Color3.fromRGB(255, 100, 100) -- Vermelho
-    	else
-    		-- Ativar script
-    		local sucesso = ativarScript()
-    		if sucesso then
-    			scriptAtivo = true
-    			-- Mudar aparência do botão (opcional)
-    			button.Text = "Brainrot: ON"
-    			button.BackgroundColor3 = Color3.fromRGB(100, 255, 100) -- Verde
-    		end
-    	end
+        if scriptAtivo then
+            -- Desativar script
+            desativarScript()
+            scriptAtivo = false
+            
+            -- Mudar aparência do botão
+            button.Text = "Brainrot: OFF"
+            button.BackgroundColor3 = Color3.fromRGB(255, 100, 100) -- Vermelho
+            
+        else
+            -- Ativar script
+            local sucesso = ativarScript()
+            if sucesso then
+                scriptAtivo = true
+                
+                -- Mudar aparência do botão
+                button.Text = "Brainrot: ON"
+                button.BackgroundColor3 = Color3.fromRGB(100, 255, 100) -- Verde
+            end
+        end
     end
+    
     -- Conectar o botão ao toggle
     button.MouseButton1Click:Connect(toggleScript)
+    
     -- Configuração inicial do botão
     button.Text = "Brainrot: OFF"
     button.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+    
     -- Cleanup quando o player sair
     Players.PlayerRemoving:Connect(function(leavingPlayer)
-    	if leavingPlayer == player then
-    		cleanup()
-    	end
+        if leavingPlayer == player then
+            desativarScript()
+        end
     end)
+    
+    -- Cleanup quando o botão for destruído
+    button.AncestryChanged:Connect(function()
+        if not button.Parent then
+            desativarScript()
+        end
+    end)
+    
     print("Toggle Brainrot Auto Compra carregado!")
     print("Clique no botão para ligar/desligar o script")
+    print("Use _G.brainrotAtivo para verificar status")
 end
 task.spawn(LocalScript_1_generatedScript)
 local function Animations_1_generatedScript()
@@ -680,68 +817,205 @@ local function LocalScript_2_generatedScript()
     script.Parent = ToggleBT_1
     -- LocalScript para colocar dentro do ToggleBT
     local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    
     local player = Players.LocalPlayer
     local button = script.Parent -- O botão ToggleBT
+    
     -- Variáveis de controle
     local scriptAtivo = false
+    local brainrotConnections = {}
+    local brainrotThread = nil
+    
     -- URL do script
     local SCRIPT_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/Steal-a-Brainrot/refs/heads/main/secret.lua"
-    -- Função para limpar o script
-    local function cleanup()
-    	-- Usar variável global para controlar o script
-    	if getgenv().BrainrotAutoCompra then
-    		getgenv().BrainrotAutoCompra.cleanup()
-    		getgenv().BrainrotAutoCompra = nil
-    	end
-    	print("Script Brainrot Auto Compra DESATIVADO")
+    -- Função para interceptar e armazenar conexões
+    local function setupConnectionInterceptor()
+        -- Backup das funções originais
+        local originalConnect = game:GetService("RunService").Heartbeat.Connect
+        local originalProximityConnect = game:GetService("ProximityPromptService").PromptShown.Connect
+        local originalPromptHiddenConnect = game:GetService("ProximityPromptService").PromptHidden.Connect
+        local originalCharacterConnect = Players.LocalPlayer.CharacterAdded.Connect
+        local originalChatConnect = Players.LocalPlayer.Chatted.Connect
+        local originalPlayerRemovingConnect = Players.PlayerRemoving.Connect
+        
+        -- Função para interceptar conexões
+        local function interceptConnection(originalFunc, service, event)
+            return function(self, callback)
+                local connection = originalFunc(self, callback)
+                table.insert(brainrotConnections, connection)
+                return connection
+            end
+        end
+        
+        -- Substituir temporariamente as funções Connect
+        game:GetService("RunService").Heartbeat.Connect = interceptConnection(originalConnect, "RunService", "Heartbeat")
+        game:GetService("ProximityPromptService").PromptShown.Connect = interceptConnection(originalProximityConnect, "ProximityPromptService", "PromptShown")
+        game:GetService("ProximityPromptService").PromptHidden.Connect = interceptConnection(originalPromptHiddenConnect, "ProximityPromptService", "PromptHidden")
+        Players.LocalPlayer.CharacterAdded.Connect = interceptConnection(originalCharacterConnect, "Players", "CharacterAdded")
+        Players.LocalPlayer.Chatted.Connect = interceptConnection(originalChatConnect, "Players", "Chatted")
+        Players.PlayerRemoving.Connect = interceptConnection(originalPlayerRemovingConnect, "Players", "PlayerRemoving")
+        
+        -- Retornar função para restaurar
+        return function()
+            game:GetService("RunService").Heartbeat.Connect = originalConnect
+            game:GetService("ProximityPromptService").PromptShown.Connect = originalProximityConnect
+            game:GetService("ProximityPromptService").PromptHidden.Connect = originalPromptHiddenConnect
+            Players.LocalPlayer.CharacterAdded.Connect = originalCharacterConnect
+            Players.LocalPlayer.Chatted.Connect = originalChatConnect
+            Players.PlayerRemoving.Connect = originalPlayerRemovingConnect
+        end
     end
+    
+    -- Função para desativar o script
+    local function desativarScript()
+        print("Desativando Brainrot Auto Compra...")
+        
+        -- Parar a thread principal se existir
+        if brainrotThread then
+            task.cancel(brainrotThread)
+            brainrotThread = nil
+        end
+        
+        -- Desconectar todas as conexões capturadas
+        for i, connection in pairs(brainrotConnections) do
+            if connection and typeof(connection) == "RBXScriptConnection" then
+                pcall(function()
+                    connection:Disconnect()
+                end)
+            end
+        end
+        brainrotConnections = {}
+        
+        -- Limpar variáveis globais
+        _G.AUTO_ACTIVATE = false
+        _G.brainrotAtivo = false
+        _G.brainrotStop = true
+        
+        -- Limpar outras possíveis variáveis
+        _G.trackedPrompts = nil
+        _G.lastActivation = nil
+        _G.targetNames = nil
+        _G.processedPrompts = nil
+        _G.scanQueue = nil
+        _G.targetNamesCache = nil
+        _G.positionCache = nil
+        
+        print("Script Brainrot Auto Compra DESATIVADO")
+    end
+    
     -- Função para ativar o script
     local function ativarScript()
-    	local success, result = pcall(function()
-    		loadstring(game:HttpGet(SCRIPT_URL))()
-    		return true
-    	end)
-    	if success then
-    		print("Script Brainrot Auto Compra ATIVADO")
-    		return true
-    	else
-    		warn("Erro ao carregar script:", result)
-    		return false
-    	end
+        local success, result = pcall(function()
+            -- Limpar estado anterior
+            brainrotConnections = {}
+            
+            -- Definir variáveis de controle
+            _G.brainrotAtivo = true
+            _G.AUTO_ACTIVATE = true
+            _G.brainrotStop = false
+            
+            -- Configurar interceptador de conexões
+            local restoreConnections = setupConnectionInterceptor()
+            
+            -- Executar o script em uma thread separada
+            brainrotThread = task.spawn(function()
+                local scriptCode = game:HttpGet(SCRIPT_URL)
+                
+                -- Modificar o script para adicionar verificações de parada
+                local modifiedScript = [[
+                    -- Verificação de parada no início
+                    if _G.brainrotStop then return end
+                    
+                    -- Função para verificar se deve parar
+                    local function shouldStop()
+                        return _G.brainrotStop == true or _G.brainrotAtivo == false
+                    end
+                    
+                    -- Interceptar loops principais
+                    local originalWait = wait
+                    local originalTask = task
+                    
+                    wait = function(time)
+                        if shouldStop() then return end
+                        return originalWait(time or 0)
+                    end
+                    
+                    task.wait = function(time)
+                        if shouldStop() then return end
+                        return originalTask.wait(time or 0)
+                    end
+                    
+                ]] .. scriptCode
+                
+                -- Executar o código modificado
+                loadstring(modifiedScript)()
+            end)
+            
+            -- Aguardar um pouco para o script inicializar
+            wait(0.5)
+            
+            return true
+        end)
+        
+        if success then
+            print("Script Brainrot Auto Compra ATIVADO")
+            return true
+        else
+            warn("Erro ao carregar script:", result)
+            desativarScript()
+            return false
+        end
     end
+    
     -- Função de toggle
     local function toggleScript()
-    	if scriptAtivo then
-    		-- Desativar script
-    		cleanup()
-    		scriptAtivo = false
-    		-- Mudar aparência do botão (opcional)
-    		button.Text = "Brainrot: OFF"
-    		button.BackgroundColor3 = Color3.fromRGB(255, 100, 100) -- Vermelho
-    	else
-    		-- Ativar script
-    		local sucesso = ativarScript()
-    		if sucesso then
-    			scriptAtivo = true
-    			-- Mudar aparência do botão (opcional)
-    			button.Text = "Brainrot: ON"
-    			button.BackgroundColor3 = Color3.fromRGB(100, 255, 100) -- Verde
-    		end
-    	end
+        if scriptAtivo then
+            -- Desativar script
+            desativarScript()
+            scriptAtivo = false
+            
+            -- Mudar aparência do botão
+            button.Text = "Brainrot: OFF"
+            button.BackgroundColor3 = Color3.fromRGB(255, 100, 100) -- Vermelho
+            
+        else
+            -- Ativar script
+            local sucesso = ativarScript()
+            if sucesso then
+                scriptAtivo = true
+                
+                -- Mudar aparência do botão
+                button.Text = "Brainrot: ON"
+                button.BackgroundColor3 = Color3.fromRGB(100, 255, 100) -- Verde
+            end
+        end
     end
+    
     -- Conectar o botão ao toggle
     button.MouseButton1Click:Connect(toggleScript)
+    
     -- Configuração inicial do botão
     button.Text = "Brainrot: OFF"
     button.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+    
     -- Cleanup quando o player sair
     Players.PlayerRemoving:Connect(function(leavingPlayer)
-    	if leavingPlayer == player then
-    		cleanup()
-    	end
+        if leavingPlayer == player then
+            desativarScript()
+        end
     end)
+    
+    -- Cleanup quando o botão for destruído
+    button.AncestryChanged:Connect(function()
+        if not button.Parent then
+            desativarScript()
+        end
+    end)
+    
     print("Toggle Brainrot Auto Compra carregado!")
     print("Clique no botão para ligar/desligar o script")
+    print("Use _G.brainrotAtivo para verificar status")
 end
 task.spawn(LocalScript_2_generatedScript)
 local function LocalScript_3_generatedScript()
