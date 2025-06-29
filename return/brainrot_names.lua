@@ -1,8 +1,4 @@
 return {
-    "Lirili Larila",
-    "Lirilì Larilà", 
-    "Noobini Pizzanini",
-    "Tim Cheese",
     "La Vacca Saturno Saturnita",
     "Los Tralaleritos", 
     "Graipuss Medussi",
