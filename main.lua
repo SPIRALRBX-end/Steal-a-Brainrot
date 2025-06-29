@@ -589,7 +589,7 @@ local function LocalScript_1_generatedScript()
     local SCRIPT_ACTIVE = false
     local MAX_DISTANCE = 15
     local ACTIVATION_DELAY = 0.1
-    local BRAINROT_NAMES_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/steal/refs/heads/main/brainrot_names.lua"
+    local BRAINROT_NAMES_URL = "https://github.com/SPIRALRBX-end/Steal-a-Brainrot/blob/main/return/god/brainrot_names.lua"
     local trackedPrompts = {}
     local lastActivation = {}
     local connections = {}
@@ -634,6 +634,7 @@ local function LocalScript_1_generatedScript()
     	else
     		-- Nomes padrão caso não consiga baixar
     		targetNames = {
+    			"Tung Tung Tung Sahur",
     			"Cocofanto Elefanto",
     			"Tralalero Tralala", 
     			"Odin Din Din Dun",
@@ -940,7 +941,7 @@ local function LocalScript_2_generatedScript()
     local SCRIPT_ACTIVE = false
     local MAX_DISTANCE = 15
     local ACTIVATION_DELAY = 0.1
-    local BRAINROT_NAMES_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/steal/refs/heads/main/brainrot_names.lua"
+    local BRAINROT_NAMES_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/Steal-a-Brainrot/refs/heads/main/return/secret/brainrot_names.lua"
     local trackedPrompts = {}
     local lastActivation = {}
     local connections = {}
