@@ -1,5 +1,4 @@
 return {
-    "Noobini Pizzanini",
     "Cocofanto Elefanto",
     "Tralalero Tralala", 
     "Odin Din Din Dun",
