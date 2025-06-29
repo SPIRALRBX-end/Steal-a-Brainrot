@@ -46,10 +46,6 @@ local function loadBrainrotNames()
     else
         print("⚠️ Failed to load online list, using local list instead...")
         targetNames = {
-            "Lirili Larila",
-            "Lirilì Larilà", 
-            "Noobini Pizzanini",
-            "Tim Cheese",
             "La Vacca Saturno Saturnita",
             "Los Tralaleritos", 
             "Graipuss Medussi",
