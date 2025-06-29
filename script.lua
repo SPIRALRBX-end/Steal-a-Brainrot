@@ -41,10 +41,43 @@ end
 local function findClickableButton(container)
     local buttons = {}
     
-    -- Procurar por TextButton
+    -- Procurar por TextButton e ImageButton em toda a estrutura
     for _, child in pairs(container:GetDescendants()) do
         if child:IsA("TextButton") or child:IsA("ImageButton") then
             table.insert(buttons, child)
+            print("Botão encontrado:", child:GetFullName(), "| Visível:", child.Visible, "| Ativo:", child.Active)
+        end
+    end
+    
+    -- Também procurar por Frames que podem ser clicáveis
+    for _, child in pairs(container:GetDescendants()) do
+        if child:IsA("Frame") and (child.Name:find("Button") or child.Name:find("Input")) then
+            table.insert(buttons, child)
+            print("Frame clicável encontrado:", child:GetFullName(), "| Visível:", child.Visible)
+        end
+    end
+    
+    -- Procurar especificamente pelos caminhos mencionados
+    -- game:GetService("Players").LocalPlayer.PlayerGui.ProximityPrompts.Prompt.TextButton
+    local textButton = container:FindFirstChild("TextButton")
+    if textButton then
+        print("TextButton direto encontrado!")
+        table.insert(buttons, textButton)
+    end
+    
+    -- game:GetService("Players").LocalPlayer.PlayerGui.ProximityPrompts.Prompt.Frame.InputFrame.Frame.ButtonImage
+    local frame = container:FindFirstChild("Frame")
+    if frame then
+        local inputFrame = frame:FindFirstChild("InputFrame")
+        if inputFrame then
+            local innerFrame = inputFrame:FindFirstChild("Frame")
+            if innerFrame then
+                local buttonImage = innerFrame:FindFirstChild("ButtonImage")
+                if buttonImage then
+                    print("ButtonImage encontrado no caminho específico!")
+                    table.insert(buttons, buttonImage)
+                end
+            end
         end
     end
     
@@ -59,42 +92,118 @@ local function activatePrompt(promptContainer)
     local currentTime = tick()
     
     -- Evitar spam (ativar apenas uma vez por segundo)
-    if lastActivation[promptId] and currentTime - lastActivation[promptId] < 1 then
+    if lastActivation[promptId] and currentTime - lastActivation[promptId] < 0.5 then
         return
     end
     
     lastActivation[promptId] = currentTime
     
     spawn(function()
+        print("Tentando ativar prompt:", promptContainer:GetFullName())
+        
+        -- Procurar por todos os botões possíveis
         local buttons = findClickableButton(promptContainer)
         
         for _, button in pairs(buttons) do
             if button.Visible and button.Parent then
-                print("Ativando Brainrot Prompt:", button:GetFullName())
+                print("Botão encontrado:", button:GetFullName())
+                print("Tipo do botão:", button.ClassName)
+                print("Botão visível:", button.Visible)
+                print("Botão ativo:", button.Active)
                 
-                -- Tentar diferentes métodos de ativação
+                -- Método 1: MouseButton1Down + MouseButton1Up
                 pcall(function()
-                    -- Método 1: MouseButton1Click
                     if button:IsA("TextButton") or button:IsA("ImageButton") then
+                        print("Tentando MouseButton1Down/Up...")
+                        button.MouseButton1Down:Fire()
+                        wait(0.1)
+                        button.MouseButton1Up:Fire()
+                    end
+                end)
+                
+                wait(0.1)
+                
+                -- Método 2: MouseButton1Click
+                pcall(function()
+                    if button:IsA("TextButton") or button:IsA("ImageButton") then
+                        print("Tentando MouseButton1Click...")
                         button.MouseButton1Click:Fire()
                     end
                 end)
                 
+                wait(0.1)
+                
+                -- Método 3: Activated
                 pcall(function()
-                    -- Método 2: Activated
-                    if button.Activated then
-                        button.Activated:Fire()
+                    print("Tentando Activated...")
+                    button.Activated:Fire()
+                end)
+                
+                wait(0.1)
+                
+                -- Método 4: GuiService
+                pcall(function()
+                    local GuiService = game:GetService("GuiService")
+                    print("Tentando GuiService...")
+                    GuiService.SelectedObject = button
+                    wait(0.1)
+                    button.Activated:Fire()
+                end)
+                
+                wait(0.1)
+                
+                -- Método 5: Simular clique via UserInputService
+                pcall(function()
+                    print("Tentando UserInputService...")
+                    UserInputService:SimulateMouseButton(Enum.UserInputType.MouseButton1, true)
+                    wait(0.1)
+                    UserInputService:SimulateMouseButton(Enum.UserInputType.MouseButton1, false)
+                end)
+                
+                wait(0.1)
+                
+                -- Método 6: Tentar encontrar RemoteEvents ou BindableEvents
+                pcall(function()
+                    print("Procurando por RemoteEvents...")
+                    for _, child in pairs(button:GetChildren()) do
+                        if child:IsA("RemoteEvent") then
+                            print("Encontrado RemoteEvent:", child.Name)
+                            child:FireServer()
+                        elseif child:IsA("BindableEvent") then
+                            print("Encontrado BindableEvent:", child.Name)
+                            child:Fire()
+                        end
                     end
                 end)
                 
+                wait(0.1)
+                
+                -- Método 7: Procurar por scripts e tentar ativar diretamente
                 pcall(function()
-                    -- Método 3: Simular input do usuário
-                    UserInputService:SimulateKeyHold(Enum.KeyCode.E, AUTO_CLICK_DELAY)
+                    print("Verificando eventos do botão...")
+                    -- Verificar se o botão tem connections
+                    local connections = getconnections and getconnections(button.MouseButton1Click)
+                    if connections then
+                        for _, connection in pairs(connections) do
+                            if connection.Function then
+                                print("Executando função conectada...")
+                                connection.Function()
+                            end
+                        end
+                    end
                 end)
                 
-                wait(AUTO_CLICK_DELAY)
+                print("Tentativas de ativação concluídas para:", button.Name)
             end
         end
+        
+        -- Tentar ativar via tecla E (método comum para ProximityPrompts)
+        pcall(function()
+            print("Tentando tecla E...")
+            UserInputService:SimulateKeyDown(Enum.KeyCode.E)
+            wait(0.1)
+            UserInputService:SimulateKeyUp(Enum.KeyCode.E)
+        end)
     end)
 end
 
