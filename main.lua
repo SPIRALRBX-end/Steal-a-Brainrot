@@ -634,7 +634,6 @@ local function LocalScript_1_generatedScript()
     	else
     		-- Nomes padrão caso não consiga baixar
     		targetNames = {
-    			"Noobini Pizzanini",
     			"Cocofanto Elefanto",
     			"Tralalero Tralala", 
     			"Odin Din Din Dun",
