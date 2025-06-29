@@ -22,37 +22,45 @@ local trackedPrompts = {}
 local lastActivation = {}
 local connections = {}
 
--- Função para verificar se é um modelo específico (Noobini Pizzanini, Lirilì Larilà, Tim Cheese)
-local function isBrainrotModel(model)
-    if not model then return false end
-    if not model.Name then return false end
+-- Função para verificar se o ProximityPrompt é de um modelo específico
+local function isTargetPrompt(prompt)
+    if not prompt then return false end
     
-    local name = model.Name
+    -- Verificar ObjectText do ProximityPrompt
+    local objectText = prompt.ObjectText or ""
+    if objectText == "" then return false end
     
-    -- Lista dos modelos específicos que queremos ativar
-    local targetModels = {
-        "Noobini Pizzanini",
+    -- Lista dos nomes específicos que queremos ativar
+    local targetNames = {
+        "Lirili Larila",
         "Lirilì Larilà", 
+        "Noobini Pizzanini",
         "Tim Cheese"
     }
     
-    -- Verificar correspondência exata
-    for _, targetName in pairs(targetModels) do
-        if name == targetName then
-            return true
+    -- Verificar se o ObjectText contém algum dos nomes alvos
+    for _, targetName in pairs(targetNames) do
+        if objectText:find(targetName) then
+            return true, targetName
         end
     end
     
-    -- Verificar correspondência com caracteres especiais convertidos
-    local nameLower = name:lower()
-    if nameLower == "noobini pizzanini" or
-       nameLower == "lirilì larilà" or
-       nameLower == "lirili larila" or  -- versão sem acentos
-       nameLower == "tim cheese" then
-        return true
+    -- Verificar versões em minúsculas e sem acentos
+    local objectTextLower = objectText:lower()
+    local alternativeNames = {
+        "lirili larila",
+        "lirilì larilà",
+        "noobini pizzanini", 
+        "tim cheese"
+    }
+    
+    for i, altName in pairs(alternativeNames) do
+        if objectTextLower:find(altName) then
+            return true, targetNames[i] or altName
+        end
     end
     
-    return false
+    return false, nil
 end
 
 -- Função melhorada para ativar ProximityPrompt
@@ -213,27 +221,24 @@ local function scanExistingPrompts()
     -- Escanear workspace
     for _, obj in pairs(game.Workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.Enabled then
-            local model = obj.Parent
-            local searchDepth = 0
+            -- Verificar se é um prompt alvo pelo ObjectText
+            local isTarget, foundName = isTargetPrompt(obj)
             
-            -- Procurar pelo modelo pai (máximo 10 níveis)
-            while model and not model:IsA("Model") and searchDepth < 10 do
-                model = model.Parent
-                searchDepth = searchDepth + 1
-            end
-            
-            if model and isBrainrotModel(model) then
-                -- Calcular distância
+            if isTarget then
+                -- Calcular distância usando o parent do prompt
+                local promptParent = obj.Parent
                 local modelPosition = nil
                 
                 -- Tentar encontrar uma part para calcular distância
-                if model:FindFirstChild("HumanoidRootPart") then
-                    modelPosition = model.HumanoidRootPart.Position
-                elseif model.PrimaryPart then
-                    modelPosition = model.PrimaryPart.Position
+                if promptParent:IsA("BasePart") then
+                    modelPosition = promptParent.Position
+                elseif promptParent:FindFirstChild("HumanoidRootPart") then
+                    modelPosition = promptParent.HumanoidRootPart.Position
+                elseif promptParent:IsA("Model") and promptParent.PrimaryPart then
+                    modelPosition = promptParent.PrimaryPart.Position
                 else
-                    -- Usar a primeira part encontrada
-                    for _, child in pairs(model:GetDescendants()) do
+                    -- Buscar qualquer BasePart no parent
+                    for _, child in pairs(promptParent:GetDescendants()) do
                         if child:IsA("BasePart") then
                             modelPosition = child.Position
                             break
@@ -246,7 +251,7 @@ local function scanExistingPrompts()
                     
                     if distance <= MAX_DISTANCE then
                         promptsFound = promptsFound + 1
-                        print("🎯 ProximityPrompt encontrado a", math.floor(distance), "studs:", model.Name)
+                        print("🎯 Prompt alvo encontrado a", math.floor(distance), "studs:", foundName, "- ObjectText:", obj.ObjectText)
                         
                         if AUTO_ACTIVATE then
                             activateProximityPrompt(obj)
@@ -258,7 +263,7 @@ local function scanExistingPrompts()
     end
     
     if promptsFound > 0 then
-        print("📊 Total de prompts encontrados:", promptsFound)
+        print("📊 Total de prompts alvos encontrados:", promptsFound)
     end
 end
 
@@ -310,28 +315,22 @@ connections[#connections + 1] = player.Chatted:Connect(function(message)
         
         -- Contar ProximityPrompts no workspace
         local totalPrompts = 0
-        local brainrotPrompts = 0
+        local targetPrompts = 0
         
         for _, obj in pairs(game.Workspace:GetDescendants()) do
             if obj:IsA("ProximityPrompt") then
                 totalPrompts = totalPrompts + 1
                 
-                local model = obj.Parent
-                local searchDepth = 0
-                while model and not model:IsA("Model") and searchDepth < 10 do
-                    model = model.Parent
-                    searchDepth = searchDepth + 1
-                end
-                
-                if model and isBrainrotModel(model) then
-                    brainrotPrompts = brainrotPrompts + 1
-                    print("🎯 Modelo específico encontrado:", model.Name, "| Habilitado:", obj.Enabled, "| MaxDistance:", obj.MaxActivationDistance)
+                local isTarget, foundName = isTargetPrompt(obj)
+                if isTarget then
+                    targetPrompts = targetPrompts + 1
+                    print("🎯 Prompt alvo encontrado:", foundName, "| ObjectText:", obj.ObjectText, "| Habilitado:", obj.Enabled, "| MaxDistance:", obj.MaxActivationDistance)
                 end
             end
         end
         
         print("📊 Total ProximityPrompts:", totalPrompts)
-        print("🎯 Modelos específicos encontrados:", brainrotPrompts)
+        print("🎯 Prompts alvos encontrados:", targetPrompts)
         print("🔗 Conexões ativas:", #connections)
         
     elseif msg == "/toggle" then
@@ -377,8 +376,8 @@ connections[#connections + 1] = game.Players.PlayerRemoving:Connect(function(lea
     end
 end)
 
-print("=== 🚀 Auto Activator Específico V3 Iniciado ===")
-print("🎯 Monitorando apenas: Noobini Pizzanini, Lirilì Larilà, Tim Cheese")
+print("=== 🚀 Auto Activator por ObjectText V3 Iniciado ===")
+print("🎯 Monitorando ObjectText: Lirili Larila, Noobini Pizzanini, Tim Cheese")
 print("📚 Digite /help para ver comandos disponíveis")
 print("🔄 Auto activate:", AUTO_ACTIVATE and "LIGADO ✅" or "DESLIGADO ❌")
 print("📏 Distância máxima:", MAX_DISTANCE)
