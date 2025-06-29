@@ -23,7 +23,15 @@ local lastActivation = {}
 
 -- Função para verificar se é um modelo Brainrot/La Vacca
 local function isBrainrotModel(model)
-    if not model or not model.Name then return false end
+    if not model then return false end
+    
+    -- MODO DEBUG: Ativar TODOS os ProximityPrompts para teste
+    -- Remova este return true depois de confirmar que funciona
+    return true
+    
+    -- Código original (comentado para debug)
+    --[[
+    if not model.Name then return false end
     
     local name = model.Name:lower()
     return name:match("lirilì") or 
@@ -35,6 +43,7 @@ local function isBrainrotModel(model)
            name:match("vacca") or
            name:match("saturno") or
            name:match("saturnita")
+    --]]
 end
 
 -- Função para ativar um ProximityPrompt
@@ -107,16 +116,33 @@ local function monitorProximityPrompts()
         
         -- Verificar se é de um modelo Brainrot
         local model = prompt.Parent
+        local modelPath = ""
+        
+        -- Encontrar o modelo pai e mostrar o caminho completo
         while model and not model:IsA("Model") do
+            modelPath = model.Name .. " -> " .. modelPath
             model = model.Parent
         end
         
-        if model and isBrainrotModel(model) then
-            print("Brainrot ProximityPrompt detectado!")
-            if AUTO_ACTIVATE then
-                wait(0.1) -- Pequeno delay para garantir que está totalmente carregado
-                activateProximityPrompt(prompt)
+        if model then
+            modelPath = model.Name .. " -> " .. modelPath
+            print("Caminho completo:", modelPath)
+            print("Nome do modelo:", model.Name)
+            print("Verificando se é Brainrot...")
+            
+            if isBrainrotModel(model) then
+                print("✅ Brainrot ProximityPrompt detectado! Modelo:", model.Name)
+                if AUTO_ACTIVATE then
+                    wait(0.1)
+                    activateProximityPrompt(prompt)
+                else
+                    print("⚠️ Auto activate está desligado")
+                end
+            else
+                print("❌ Não é um modelo Brainrot:", model.Name)
             end
+        else
+            print("❌ Não foi possível encontrar o modelo pai")
         end
     end)
     
