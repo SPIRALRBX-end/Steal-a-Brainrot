@@ -48,6 +48,7 @@ local function loadBrainrotNames()
         return true
     else
         targetNames = {
+            "Noobini Pizzanini",
             "Cocofanto Elefanto",
             "Tralalero Tralala", 
             "Odin Din Din Dun",
