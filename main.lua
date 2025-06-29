@@ -572,95 +572,315 @@ local function LocalScript_1_generatedScript()
     local script = Instance.new('LocalScript')
     script.Name = "LocalScript"
     script.Parent = ToggleBT
-    -- LocalScript para colocar dentro do ToggleBT
+    -- Este script vai DENTRO do botão: ScreenGui.Frame.MainFR.BrainrotGodFR.ToggleBT
+    -- Crie um LocalScript dentro do botão e cole este código
+    local toggleButton = script.Parent -- O próprio botão
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
+    local ProximityPromptService = game:GetService("ProximityPromptService")
+    local UserInputService = game:GetService("UserInputService")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local HttpService = game:GetService("HttpService")
     local player = Players.LocalPlayer
-    local button = script.Parent -- O botão ToggleBT
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
     -- Variáveis de controle
-    local scriptAtivo = false
-    local heartbeatConnection = nil
-    -- URL do script
-    local SCRIPT_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/Steal-a-Brainrot/refs/heads/main/god.lua"
-    -- Função para desativar o script
-    local function desativarScript()
-    	print("Desativando Brainrot Auto Compra...")
-    	-- Parar conexão principal
-    	if heartbeatConnection then
-    		heartbeatConnection:Disconnect()
-    		heartbeatConnection = nil
+    local AUTO_ACTIVATE = false -- Começa desativado
+    local SCRIPT_ACTIVE = false
+    local MAX_DISTANCE = 15
+    local ACTIVATION_DELAY = 0.1
+    local BRAINROT_NAMES_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/steal/refs/heads/main/brainrot_names.lua"
+    local trackedPrompts = {}
+    local lastActivation = {}
+    local connections = {}
+    local targetNames = {}
+    local processedPrompts = {}
+    local scanQueue = {}
+    local targetNamesCache = {}
+    -- Função para atualizar o visual do botão
+    local function updateButtonAppearance()
+    	if AUTO_ACTIVATE then
+    		toggleButton.Text = " "
+    		toggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Verde
+    		toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    	else
+    		toggleButton.Text = " "
+    		toggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vermelho
+    		toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     	end
-    	-- Definir variáveis globais para parar o script
-    	_G.AUTO_ACTIVATE = false
-    	_G.BRAINROT_STOP = true
-    	print("Script Brainrot Auto Compra DESATIVADO")
     end
-    -- Função para ativar o script
-    local function ativarScript()
-    	print("Ativando Brainrot Auto Compra...")
+    -- Carregar nomes Brainrot
+    local function loadBrainrotNames()
     	local success, result = pcall(function()
-    		-- Resetar variáveis de controle
-    		_G.AUTO_ACTIVATE = true
-    		_G.BRAINROT_STOP = false
-    		-- Executar o script original
-    		loadstring(game:HttpGet(SCRIPT_URL))()
-    		return true
+    		local loadstring_func = loadstring or load
+    		if loadstring_func then
+    			local code = game:HttpGet(BRAINROT_NAMES_URL)
+    			local namesList = loadstring_func(code)()
+    			return namesList
+    		else
+    			error("Loadstring não disponível")
+    		end
     	end)
-    	if success then
-    		print("Script Brainrot Auto Compra ATIVADO com sucesso!")
+    	if success and result and type(result) == "table" then
+    		targetNames = result
+    		targetNamesCache = {}
+    		for i, name in pairs(targetNames) do
+    			targetNamesCache[i] = {
+    				original = name,
+    				lower = name:lower()
+    			}
+    		end
     		return true
     	else
-    		print("Erro ao carregar script:", result)
+    		-- Nomes padrão caso não consiga baixar
+    		targetNames = {
+    			"Cocofanto Elefanto",
+    			"Tralalero Tralala", 
+    			"Odin Din Din Dun",
+    			"Girafa Celestre",
+    			"Gattatino Nyanino",
+    			"Trenostruzzo Turbo 3000",
+    			"Matteo"
+    		}
+    		targetNamesCache = {}
+    		for i, name in pairs(targetNames) do
+    			targetNamesCache[i] = {
+    				original = name,
+    				lower = name:lower()
+    			}
+    		end
     		return false
     	end
     end
-    -- Função de toggle
-    local function toggleScript()
-    	print("Toggle clicado. Estado atual:", scriptAtivo and "ATIVO" or "INATIVO")
-    	if scriptAtivo then
-    		-- Desativar script
-    		desativarScript()
-    		scriptAtivo = false
-    		-- Mudar aparência do botão
-    		button.Text = "Brainrot: OFF"
-    		button.BackgroundColor3 = Color3.fromRGB(255, 100, 100) -- Vermelho
+    local function isTargetPrompt(prompt)
+    	if not prompt or not prompt.ObjectText then return false end
+    	local objectText = prompt.ObjectText
+    	if objectText == "" then return false end
+    	local objectTextLower = objectText:lower()
+    	for _, nameData in pairs(targetNamesCache) do
+    		if objectText:find(nameData.original) or objectTextLower:find(nameData.lower) then
+    			return true, nameData.original
+    		end
+    	end
+    	return false, nil
+    end
+    local function activateProximityPrompt(prompt)
+    	if not prompt or not prompt.Parent or not AUTO_ACTIVATE then return end
+    	local promptId = tostring(prompt)
+    	local currentTime = tick()
+    	if lastActivation[promptId] and currentTime - lastActivation[promptId] < 1 then
+    		return
+    	end
+    	lastActivation[promptId] = currentTime
+    	coroutine.wrap(function()
+    		local success = pcall(function()
+    			if fireproximityprompt then
+    				fireproximityprompt(prompt)
+    				return
+    			end
+    		end)
+    		if success then return end
+    		pcall(function()
+    			if prompt.HoldDuration > 0 then
+    				prompt:InputHoldBegin()
+    				wait(math.min(prompt.HoldDuration + 0.05, 0.5))
+    				prompt:InputHoldEnd()
+    			else
+    				prompt:InputHoldBegin()
+    				wait(ACTIVATION_DELAY)
+    				prompt:InputHoldEnd()
+    			end
+    		end)
+    	end)()
+    end
+    local positionCache = {}
+    local function getModelPosition(promptParent)
+    	local cacheKey = tostring(promptParent)
+    	local currentTime = tick()
+    	if positionCache[cacheKey] and currentTime - positionCache[cacheKey].time < 0.5 then
+    		return positionCache[cacheKey].position
+    	end
+    	local position = nil
+    	if promptParent:IsA("BasePart") then
+    		position = promptParent.Position
+    	elseif promptParent:FindFirstChild("HumanoidRootPart") then
+    		position = promptParent.HumanoidRootPart.Position
+    	elseif promptParent:IsA("Model") and promptParent.PrimaryPart then
+    		position = promptParent.PrimaryPart.Position
     	else
-    		-- Ativar script
-    		print("Tentando ativar script...")
-    		local sucesso = ativarScript()
-    		if sucesso then
-    			scriptAtivo = true
-    			-- Mudar aparência do botão
-    			button.Text = "Brainrot: ON"
-    			button.BackgroundColor3 = Color3.fromRGB(100, 255, 100) -- Verde
-    			print("Script ativado com sucesso!")
-    		else
-    			print("Falha ao ativar script!")
-    			-- Manter botão como OFF se falhar
-    			button.Text = "Brainrot: ERROR"
-    			button.BackgroundColor3 = Color3.fromRGB(255, 255, 100) -- Amarelo
+    		for i, child in pairs(promptParent:GetChildren()) do
+    			if i > 10 then break end
+    			if child:IsA("BasePart") then
+    				position = child.Position
+    				break
+    			end
+    		end
+    	end
+    	if position then
+    		positionCache[cacheKey] = {
+    			position = position,
+    			time = currentTime
+    		}
+    	end
+    	return position
+    end
+    local function processPromptsQueue()
+    	if not AUTO_ACTIVATE then return end
+    	local processed = 0
+    	local maxPerFrame = 5
+    	while #scanQueue > 0 and processed < maxPerFrame do
+    		local prompt = table.remove(scanQueue, 1)
+    		processed = processed + 1
+    		if prompt and prompt.Parent then
+    			local promptId = tostring(prompt)
+    			if processedPrompts[promptId] and tick() - processedPrompts[promptId] < 2 then
+    				continue
+    			end
+    			processedPrompts[promptId] = tick()
+    			local isTarget, foundName = isTargetPrompt(prompt)
+    			if isTarget and character and humanoidRootPart then
+    				local playerPosition = humanoidRootPart.Position
+    				local modelPosition = getModelPosition(prompt.Parent)
+    				if modelPosition then
+    					local distance = (playerPosition - modelPosition).Magnitude
+    					if distance <= MAX_DISTANCE then
+    						activateProximityPrompt(prompt)
+    					end
+    				end
+    			end
     		end
     	end
     end
-    -- Conectar o botão ao toggle
-    button.MouseButton1Click:Connect(function()
-    	print("Botão clicado!")
-    	toggleScript()
-    end)
-    -- Configuração inicial do botão
-    button.Text = "Brainrot: OFF"
-    button.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-    -- Cleanup quando o player sair
-    Players.PlayerRemoving:Connect(function(leavingPlayer)
-    	if leavingPlayer == player then
-    		if scriptAtivo then
-    			desativarScript()
+    local function scanExistingPrompts()
+    	if not AUTO_ACTIVATE or not character or not humanoidRootPart then
+    		return
+    	end
+    	local playerPosition = humanoidRootPart.Position
+    	local scanRegion = Region3.new(
+    		playerPosition - Vector3.new(MAX_DISTANCE * 2, MAX_DISTANCE * 2, MAX_DISTANCE * 2),
+    		playerPosition + Vector3.new(MAX_DISTANCE * 2, MAX_DISTANCE * 2, MAX_DISTANCE * 2)
+    	)
+    	pcall(function()
+    		local parts = game.Workspace:ReadVoxels(scanRegion, 4)
+    		for _, part in pairs(parts) do
+    			for _, descendant in pairs(part:GetChildren()) do
+    				if descendant:IsA("ProximityPrompt") and descendant.Enabled then
+    					table.insert(scanQueue, descendant)
+    				end
+    			end
+    		end
+    	end)
+    end
+    local function startScript()
+    	if SCRIPT_ACTIVE then return end
+    	SCRIPT_ACTIVE = true
+    	connections[#connections + 1] = ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
+    		if not AUTO_ACTIVATE then return end
+    		local isTarget, foundName = isTargetPrompt(prompt)
+    		if isTarget then
+    			wait(0.1)
+    			activateProximityPrompt(prompt)
+    		end
+    	end)
+    	connections[#connections + 1] = ProximityPromptService.PromptHidden:Connect(function(prompt, inputType)
+    		local promptId = tostring(prompt)
+    		trackedPrompts[promptId] = nil
+    		processedPrompts[promptId] = nil
+    	end)
+    	local lastScan = 0
+    	local lastCleanup = 0
+    	connections[#connections + 1] = RunService.Heartbeat:Connect(function()
+    		if not AUTO_ACTIVATE then return end
+    		local currentTime = tick()
+    		if #scanQueue > 0 then
+    			processPromptsQueue()
+    		end
+    		if currentTime - lastScan >= 3 then
+    			lastScan = currentTime
+    			if #scanQueue < 50 then
+    				pcall(scanExistingPrompts)
+    			end
+    		end
+    		if currentTime - lastCleanup >= 15 then
+    			lastCleanup = currentTime
+    			-- Cleanup
+    			for promptId, time in pairs(lastActivation) do
+    				if currentTime - time > 30 then
+    					lastActivation[promptId] = nil
+    				end
+    			end
+    			for promptId, time in pairs(processedPrompts) do
+    				if currentTime - time > 10 then
+    					processedPrompts[promptId] = nil
+    				end
+    			end
+    			for key, data in pairs(positionCache) do
+    				if currentTime - data.time > 2 then
+    					positionCache[key] = nil
+    				end
+    			end
+    		end
+    	end)
+    	print("🔥 Brainrot Auto Compra: ATIVADO")
+    end
+    local function stopScript()
+    	if not SCRIPT_ACTIVE then return end
+    	SCRIPT_ACTIVE = false
+    	for _, connection in pairs(connections) do
+    		if connection then
+    			connection:Disconnect()
     		end
     	end
+    	connections = {}
+    	trackedPrompts = {}
+    	lastActivation = {}
+    	processedPrompts = {}
+    	positionCache = {}
+    	scanQueue = {}
+    	print("❌ Brainrot Auto Compra: DESATIVADO")
+    end
+    local function toggleScript()
+    	AUTO_ACTIVATE = not AUTO_ACTIVATE
+    	updateButtonAppearance()
+    	if AUTO_ACTIVATE then
+    		startScript()
+    	else
+    		stopScript()
+    	end
+    end
+    -- EVENTO PRINCIPAL DO BOTÃO
+    toggleButton.MouseButton1Click:Connect(toggleScript)
+    -- Recarregar quando character respawnar
+    local function onCharacterAdded(newCharacter)
+    	character = newCharacter
+    	humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    	if AUTO_ACTIVATE then
+    		stopScript()
+    		wait(1)
+    		startScript()
+    	end
+    end
+    player.CharacterAdded:Connect(onCharacterAdded)
+    -- Cleanup quando sair
+    game.Players.PlayerRemoving:Connect(function(leavingPlayer)
+    	if leavingPlayer == player then
+    		stopScript()
+    	end
     end)
-    print("=== Toggle Brainrot Carregado ===")
-    print("Botão configurado em:", button:GetFullName())
-    print("Clique no botão para ativar/desativar")
+    -- INICIALIZAÇÃO
+    print("=== 🧠 Brainrot Auto Compra V7 - Botão Integrado ===")
+    loadBrainrotNames()
+    updateButtonAppearance()
+    print("✅ Script carregado no botão!")
+    print("📝 Nomes carregados:", #targetNames)
+    print("🎯 Clique no botão para ativar/desativar")
+    -- Scan inicial após 2 segundos
+    coroutine.wrap(function()
+    	wait(2)
+    	if AUTO_ACTIVATE then
+    		scanExistingPrompts()
+    	end
+    end)()
 end
 task.spawn(LocalScript_1_generatedScript)
 local function Animations_1_generatedScript()
@@ -703,95 +923,312 @@ local function LocalScript_2_generatedScript()
     local script = Instance.new('LocalScript')
     script.Name = "LocalScript"
     script.Parent = ToggleBT_1
-    -- LocalScript para colocar dentro do ToggleBT
+    -- Este script vai DENTRO do botão: ScreenGui.Frame.MainFR.BrainrotGodFR.ToggleBT
+    -- Crie um LocalScript dentro do botão e cole este código
+    local toggleButton = script.Parent -- O próprio botão
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
+    local ProximityPromptService = game:GetService("ProximityPromptService")
+    local UserInputService = game:GetService("UserInputService")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local HttpService = game:GetService("HttpService")
     local player = Players.LocalPlayer
-    local button = script.Parent -- O botão ToggleBT
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
     -- Variáveis de controle
-    local scriptAtivo = false
-    local heartbeatConnection = nil
-    -- URL do script
-    local SCRIPT_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/Steal-a-Brainrot/refs/heads/main/secret.lua"
-    -- Função para desativar o script
-    local function desativarScript()
-    	print("Desativando Brainrot Auto Compra...")
-    	-- Parar conexão principal
-    	if heartbeatConnection then
-    		heartbeatConnection:Disconnect()
-    		heartbeatConnection = nil
+    local AUTO_ACTIVATE = false -- Começa desativado
+    local SCRIPT_ACTIVE = false
+    local MAX_DISTANCE = 15
+    local ACTIVATION_DELAY = 0.1
+    local BRAINROT_NAMES_URL = "https://raw.githubusercontent.com/SPIRALRBX-end/steal/refs/heads/main/brainrot_names.lua"
+    local trackedPrompts = {}
+    local lastActivation = {}
+    local connections = {}
+    local targetNames = {}
+    local processedPrompts = {}
+    local scanQueue = {}
+    local targetNamesCache = {}
+    -- Função para atualizar o visual do botão
+    local function updateButtonAppearance()
+    	if AUTO_ACTIVATE then
+    		toggleButton.Text = " "
+    		toggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Verde
+    		toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    	else
+    		toggleButton.Text = " "
+    		toggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Vermelho
+    		toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     	end
-    	-- Definir variáveis globais para parar o script
-    	_G.AUTO_ACTIVATE = false
-    	_G.BRAINROT_STOP = true
-    	print("Script Brainrot Auto Compra DESATIVADO")
     end
-    -- Função para ativar o script
-    local function ativarScript()
-    	print("Ativando Brainrot Auto Compra...")
+    -- Carregar nomes Brainrot
+    local function loadBrainrotNames()
     	local success, result = pcall(function()
-    		-- Resetar variáveis de controle
-    		_G.AUTO_ACTIVATE = true
-    		_G.BRAINROT_STOP = false
-    		-- Executar o script original
-    		loadstring(game:HttpGet(SCRIPT_URL))()
-    		return true
+    		local loadstring_func = loadstring or load
+    		if loadstring_func then
+    			local code = game:HttpGet(BRAINROT_NAMES_URL)
+    			local namesList = loadstring_func(code)()
+    			return namesList
+    		else
+    			error("Loadstring não disponível")
+    		end
     	end)
-    	if success then
-    		print("Script Brainrot Auto Compra ATIVADO com sucesso!")
+    	if success and result and type(result) == "table" then
+    		targetNames = result
+    		targetNamesCache = {}
+    		for i, name in pairs(targetNames) do
+    			targetNamesCache[i] = {
+    				original = name,
+    				lower = name:lower()
+    			}
+    		end
     		return true
     	else
-    		print("Erro ao carregar script:", result)
+    		-- Nomes padrão caso não consiga baixar
+    		targetNames = {
+    			"La Vacca Saturno Saturnita",
+    			"Los Tralaleritos", 
+    			"Graipuss Medussi",
+    			"La Grande Combinasion"
+    		}
+    		targetNamesCache = {}
+    		for i, name in pairs(targetNames) do
+    			targetNamesCache[i] = {
+    				original = name,
+    				lower = name:lower()
+    			}
+    		end
     		return false
     	end
     end
-    -- Função de toggle
-    local function toggleScript()
-    	print("Toggle clicado. Estado atual:", scriptAtivo and "ATIVO" or "INATIVO")
-    	if scriptAtivo then
-    		-- Desativar script
-    		desativarScript()
-    		scriptAtivo = false
-    		-- Mudar aparência do botão
-    		button.Text = "Brainrot: OFF"
-    		button.BackgroundColor3 = Color3.fromRGB(255, 100, 100) -- Vermelho
+    local function isTargetPrompt(prompt)
+    	if not prompt or not prompt.ObjectText then return false end
+    	local objectText = prompt.ObjectText
+    	if objectText == "" then return false end
+    	local objectTextLower = objectText:lower()
+    	for _, nameData in pairs(targetNamesCache) do
+    		if objectText:find(nameData.original) or objectTextLower:find(nameData.lower) then
+    			return true, nameData.original
+    		end
+    	end
+    	return false, nil
+    end
+    local function activateProximityPrompt(prompt)
+    	if not prompt or not prompt.Parent or not AUTO_ACTIVATE then return end
+    	local promptId = tostring(prompt)
+    	local currentTime = tick()
+    	if lastActivation[promptId] and currentTime - lastActivation[promptId] < 1 then
+    		return
+    	end
+    	lastActivation[promptId] = currentTime
+    	coroutine.wrap(function()
+    		local success = pcall(function()
+    			if fireproximityprompt then
+    				fireproximityprompt(prompt)
+    				return
+    			end
+    		end)
+    		if success then return end
+    		pcall(function()
+    			if prompt.HoldDuration > 0 then
+    				prompt:InputHoldBegin()
+    				wait(math.min(prompt.HoldDuration + 0.05, 0.5))
+    				prompt:InputHoldEnd()
+    			else
+    				prompt:InputHoldBegin()
+    				wait(ACTIVATION_DELAY)
+    				prompt:InputHoldEnd()
+    			end
+    		end)
+    	end)()
+    end
+    local positionCache = {}
+    local function getModelPosition(promptParent)
+    	local cacheKey = tostring(promptParent)
+    	local currentTime = tick()
+    	if positionCache[cacheKey] and currentTime - positionCache[cacheKey].time < 0.5 then
+    		return positionCache[cacheKey].position
+    	end
+    	local position = nil
+    	if promptParent:IsA("BasePart") then
+    		position = promptParent.Position
+    	elseif promptParent:FindFirstChild("HumanoidRootPart") then
+    		position = promptParent.HumanoidRootPart.Position
+    	elseif promptParent:IsA("Model") and promptParent.PrimaryPart then
+    		position = promptParent.PrimaryPart.Position
     	else
-    		-- Ativar script
-    		print("Tentando ativar script...")
-    		local sucesso = ativarScript()
-    		if sucesso then
-    			scriptAtivo = true
-    			-- Mudar aparência do botão
-    			button.Text = "Brainrot: ON"
-    			button.BackgroundColor3 = Color3.fromRGB(100, 255, 100) -- Verde
-    			print("Script ativado com sucesso!")
-    		else
-    			print("Falha ao ativar script!")
-    			-- Manter botão como OFF se falhar
-    			button.Text = "Brainrot: ERROR"
-    			button.BackgroundColor3 = Color3.fromRGB(255, 255, 100) -- Amarelo
+    		for i, child in pairs(promptParent:GetChildren()) do
+    			if i > 10 then break end
+    			if child:IsA("BasePart") then
+    				position = child.Position
+    				break
+    			end
+    		end
+    	end
+    	if position then
+    		positionCache[cacheKey] = {
+    			position = position,
+    			time = currentTime
+    		}
+    	end
+    	return position
+    end
+    local function processPromptsQueue()
+    	if not AUTO_ACTIVATE then return end
+    	local processed = 0
+    	local maxPerFrame = 5
+    	while #scanQueue > 0 and processed < maxPerFrame do
+    		local prompt = table.remove(scanQueue, 1)
+    		processed = processed + 1
+    		if prompt and prompt.Parent then
+    			local promptId = tostring(prompt)
+    			if processedPrompts[promptId] and tick() - processedPrompts[promptId] < 2 then
+    				continue
+    			end
+    			processedPrompts[promptId] = tick()
+    			local isTarget, foundName = isTargetPrompt(prompt)
+    			if isTarget and character and humanoidRootPart then
+    				local playerPosition = humanoidRootPart.Position
+    				local modelPosition = getModelPosition(prompt.Parent)
+    				if modelPosition then
+    					local distance = (playerPosition - modelPosition).Magnitude
+    					if distance <= MAX_DISTANCE then
+    						activateProximityPrompt(prompt)
+    					end
+    				end
+    			end
     		end
     	end
     end
-    -- Conectar o botão ao toggle
-    button.MouseButton1Click:Connect(function()
-    	print("Botão clicado!")
-    	toggleScript()
-    end)
-    -- Configuração inicial do botão
-    button.Text = "Brainrot: OFF"
-    button.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-    -- Cleanup quando o player sair
-    Players.PlayerRemoving:Connect(function(leavingPlayer)
-    	if leavingPlayer == player then
-    		if scriptAtivo then
-    			desativarScript()
+    local function scanExistingPrompts()
+    	if not AUTO_ACTIVATE or not character or not humanoidRootPart then
+    		return
+    	end
+    	local playerPosition = humanoidRootPart.Position
+    	local scanRegion = Region3.new(
+    		playerPosition - Vector3.new(MAX_DISTANCE * 2, MAX_DISTANCE * 2, MAX_DISTANCE * 2),
+    		playerPosition + Vector3.new(MAX_DISTANCE * 2, MAX_DISTANCE * 2, MAX_DISTANCE * 2)
+    	)
+    	pcall(function()
+    		local parts = game.Workspace:ReadVoxels(scanRegion, 4)
+    		for _, part in pairs(parts) do
+    			for _, descendant in pairs(part:GetChildren()) do
+    				if descendant:IsA("ProximityPrompt") and descendant.Enabled then
+    					table.insert(scanQueue, descendant)
+    				end
+    			end
+    		end
+    	end)
+    end
+    local function startScript()
+    	if SCRIPT_ACTIVE then return end
+    	SCRIPT_ACTIVE = true
+    	connections[#connections + 1] = ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
+    		if not AUTO_ACTIVATE then return end
+    		local isTarget, foundName = isTargetPrompt(prompt)
+    		if isTarget then
+    			wait(0.1)
+    			activateProximityPrompt(prompt)
+    		end
+    	end)
+    	connections[#connections + 1] = ProximityPromptService.PromptHidden:Connect(function(prompt, inputType)
+    		local promptId = tostring(prompt)
+    		trackedPrompts[promptId] = nil
+    		processedPrompts[promptId] = nil
+    	end)
+    	local lastScan = 0
+    	local lastCleanup = 0
+    	connections[#connections + 1] = RunService.Heartbeat:Connect(function()
+    		if not AUTO_ACTIVATE then return end
+    		local currentTime = tick()
+    		if #scanQueue > 0 then
+    			processPromptsQueue()
+    		end
+    		if currentTime - lastScan >= 3 then
+    			lastScan = currentTime
+    			if #scanQueue < 50 then
+    				pcall(scanExistingPrompts)
+    			end
+    		end
+    		if currentTime - lastCleanup >= 15 then
+    			lastCleanup = currentTime
+    			-- Cleanup
+    			for promptId, time in pairs(lastActivation) do
+    				if currentTime - time > 30 then
+    					lastActivation[promptId] = nil
+    				end
+    			end
+    			for promptId, time in pairs(processedPrompts) do
+    				if currentTime - time > 10 then
+    					processedPrompts[promptId] = nil
+    				end
+    			end
+    			for key, data in pairs(positionCache) do
+    				if currentTime - data.time > 2 then
+    					positionCache[key] = nil
+    				end
+    			end
+    		end
+    	end)
+    	print("🔥 Brainrot Auto Compra: ATIVADO")
+    end
+    local function stopScript()
+    	if not SCRIPT_ACTIVE then return end
+    	SCRIPT_ACTIVE = false
+    	for _, connection in pairs(connections) do
+    		if connection then
+    			connection:Disconnect()
     		end
     	end
+    	connections = {}
+    	trackedPrompts = {}
+    	lastActivation = {}
+    	processedPrompts = {}
+    	positionCache = {}
+    	scanQueue = {}
+    	print("❌ Brainrot Auto Compra: DESATIVADO")
+    end
+    local function toggleScript()
+    	AUTO_ACTIVATE = not AUTO_ACTIVATE
+    	updateButtonAppearance()
+    	if AUTO_ACTIVATE then
+    		startScript()
+    	else
+    		stopScript()
+    	end
+    end
+    -- EVENTO PRINCIPAL DO BOTÃO
+    toggleButton.MouseButton1Click:Connect(toggleScript)
+    -- Recarregar quando character respawnar
+    local function onCharacterAdded(newCharacter)
+    	character = newCharacter
+    	humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    	if AUTO_ACTIVATE then
+    		stopScript()
+    		wait(1)
+    		startScript()
+    	end
+    end
+    player.CharacterAdded:Connect(onCharacterAdded)
+    -- Cleanup quando sair
+    game.Players.PlayerRemoving:Connect(function(leavingPlayer)
+    	if leavingPlayer == player then
+    		stopScript()
+    	end
     end)
-    print("=== Toggle Brainrot Carregado ===")
-    print("Botão configurado em:", button:GetFullName())
-    print("Clique no botão para ativar/desativar")
+    -- INICIALIZAÇÃO
+    print("=== 🧠 Brainrot Auto Compra V7 - Botão Integrado ===")
+    loadBrainrotNames()
+    updateButtonAppearance()
+    print("✅ Script carregado no botão!")
+    print("📝 Nomes carregados:", #targetNames)
+    print("🎯 Clique no botão para ativar/desativar")
+    -- Scan inicial após 2 segundos
+    coroutine.wrap(function()
+    	wait(2)
+    	if AUTO_ACTIVATE then
+    		scanExistingPrompts()
+    	end
+    end)()
 end
 task.spawn(LocalScript_2_generatedScript)
 local function LocalScript_3_generatedScript()
