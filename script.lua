@@ -63,7 +63,7 @@ local function isTargetPrompt(prompt)
     return false, nil
 end
 
--- Função melhorada para ativar ProximityPrompt
+-- Função para ativar um ProximityPrompt
 local function activateProximityPrompt(prompt)
     if not prompt or not prompt.Parent then return end
     
@@ -78,7 +78,7 @@ local function activateProximityPrompt(prompt)
     lastActivation[promptId] = currentTime
     
     spawn(function()
-        print("🔄 Tentando ativar ProximityPrompt:", prompt.Parent.Name)
+        print("🔄 Tentando ativar ProximityPrompt - ObjectText:", prompt.ObjectText or "N/A")
         
         -- Método 1: fireproximityprompt (exploit function)
         local success1 = pcall(function()
@@ -149,7 +149,7 @@ local function activateProximityPrompt(prompt)
         end)
         
         if not success5 then
-            print("❌ Falha ao ativar ProximityPrompt:", prompt.Parent.Name)
+            print("❌ Falha ao ativar ProximityPrompt - ObjectText:", prompt.ObjectText or "N/A")
         end
     end)
 end
@@ -201,7 +201,7 @@ local function monitorProximityPrompts()
         local promptId = tostring(prompt)
         if trackedPrompts[promptId] then
             trackedPrompts[promptId] = nil
-            print("👋 ProximityPrompt escondido:", prompt.Parent.Name)
+            print("👋 ProximityPrompt escondido - ObjectText:", prompt.ObjectText or "N/A")
         end
     end)
 end
@@ -357,11 +357,65 @@ connections[#connections + 1] = player.Chatted:Connect(function(message)
         cleanup()
         print("🧹 Limpeza manual executada")
         
+    elseif msg == "/list" then
+        print("=== 📋 LISTA DE PROMPTS PRÓXIMOS ===")
+        if not character or not humanoidRootPart then
+            print("❌ Character ou HumanoidRootPart não encontrado")
+            return
+        end
+        
+        local playerPosition = humanoidRootPart.Position
+        local promptsFound = 0
+        
+        for _, obj in pairs(game.Workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") and obj.Enabled then
+                -- Calcular distância
+                local promptParent = obj.Parent
+                local modelPosition = nil
+                
+                if promptParent:IsA("BasePart") then
+                    modelPosition = promptParent.Position
+                else
+                    for _, child in pairs(promptParent:GetDescendants()) do
+                        if child:IsA("BasePart") then
+                            modelPosition = child.Position
+                            break
+                        end
+                    end
+                end
+                
+                if modelPosition then
+                    local distance = (playerPosition - modelPosition).Magnitude
+                    
+                    if distance <= MAX_DISTANCE * 2 then -- Usar distância maior para listagem
+                        promptsFound = promptsFound + 1
+                        local isTarget, foundName = isTargetPrompt(obj)
+                        local status = isTarget and "✅ ALVO" or "❌ IGNORADO"
+                        
+                        print(string.format("%d. %s | Distância: %d studs", promptsFound, status, math.floor(distance)))
+                        print("   ObjectText: '" .. (obj.ObjectText or "N/A") .. "'")
+                        print("   Parent: " .. promptParent.Name)
+                        if isTarget then
+                            print("   Nome encontrado: " .. foundName)
+                        end
+                        print("   ---")
+                    end
+                end
+            end
+        end
+        
+        if promptsFound == 0 then
+            print("❌ Nenhum ProximityPrompt encontrado na área")
+        else
+            print("📊 Total encontrado:", promptsFound)
+        end
+        
     elseif msg == "/help" then
         print("=== 📚 COMANDOS DISPONÍVEIS ===")
         print("/debug - Informações de debug")
         print("/toggle - Ligar/desligar auto ativação")
         print("/scan - Scan manual")
+        print("/list - Listar todos os prompts próximos")
         print("/distance [número] - Definir distância máxima")
         print("/distance - Ver distância atual")
         print("/cleanup - Limpar conexões")
