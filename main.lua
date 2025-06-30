@@ -711,7 +711,6 @@ local function LocalScript_1_generatedScript()
     		return true
     	else
     		targetNames = {
-    			"Tung Tung Tung Sahur",
     			"Cocofanto Elefanto",
     			"Tralalero Tralala", 
     			"Odin Din Din Dun",
